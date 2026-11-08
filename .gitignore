@@ -1,0 +1,6 @@
+node_modules/
+coverage/
+*.ncm
+*.mp3
+*.flac
+.tmp/

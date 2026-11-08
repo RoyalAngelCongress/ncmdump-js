@@ -1,0 +1,25 @@
+{
+  "name": "ncmdump-js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Portable, dependency-free NCM decryption for browsers and JavaScript runtimes",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RoyalAngelCongress/ncmdump-js.git"
+  },
+  "homepage": "https://royalangelcongress.github.io/ncmdump-js/",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "bin": { "ncmdump-js": "./bin/ncmdump.js" },
+  "scripts": {
+    "test": "node --test test/aes.test.js test/ncm.test.js test/cli.test.js test/portable.test.js test/server.test.js",
+    "demo": "node scripts/serve-demo.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
