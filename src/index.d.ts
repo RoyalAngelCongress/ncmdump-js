@@ -4,6 +4,10 @@ export interface NcmOptions {
   /** Default true. False recovers audio when metadata decoding fails. */
   strictMetadata?: boolean;
 }
+export interface ConvertNcmOptions extends NcmOptions {
+  /** Default true: embed available title, artist, album and cover without re-encoding audio. */
+  embedMetadata?: boolean;
+}
 export interface MusicMetadata {
   name: string;
   album: string;
@@ -41,5 +45,7 @@ export interface DecryptedNcm extends NcmHeader {
 }
 export function parseNcm(input: ByteInput, options?: NcmOptions): ParsedNcm;
 export function decryptNcm(input: ByteInput, options?: NcmOptions): DecryptedNcm;
+export function convertNcm(input: ByteInput, options?: ConvertNcmOptions): DecryptedNcm;
+export function createCompleteAudio(result: Pick<DecryptedNcm, 'audio' | 'format' | 'metadata' | 'cover'>): Uint8Array;
 export function detectAudioFormat(input: ByteInput): AudioFormat | null;
 export function detectImageMimeType(input: ByteInput): 'image/png' | 'image/jpeg' | null;

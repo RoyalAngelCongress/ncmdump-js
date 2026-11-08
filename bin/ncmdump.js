@@ -2,20 +2,22 @@
 // Node-only I/O adapter. The src/ core has no Node dependencies.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import { decryptNcm } from '../src/index.js';
+import { convertNcm } from '../src/index.js';
 
-const usage = `Usage: ncmdump-js [--output DIR] [--extract] [--force] [--recover-metadata] FILE.ncm ...
+const usage = `Usage: ncmdump-js [--output DIR] [--raw] [--extract] [--force] [--recover-metadata] FILE.ncm ...
 
   -o, --output DIR      Output directory (default: beside each input)
+  --raw                Decrypt audio only, without embedding metadata or cover
   --extract            Also save metadata JSON and cover image
   --force              Allow overwriting existing output files
   --recover-metadata   Recover audio even if metadata is damaged
   -h, --help           Show help
 
-Audio bytes are decrypted as-is; tags and cover are not embedded into the audio.`;
+Default: complete conversion with embedded title, artist, album and cover.
+Audio frames are preserved without re-encoding.`;
 
 function parseArguments(args) {
-  const result = { files: [], output: null, extract: false, force: false, strictMetadata: true };
+  const result = { files: [], output: null, extract: false, force: false, strictMetadata: true, embedMetadata: true };
   let positional = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -25,7 +27,8 @@ function parseArguments(args) {
     else if (arg === '--output' || arg === '-o') {
       if (!args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`${arg} requires a directory`);
       result.output = args[++i];
-    } else if (arg === '--extract') result.extract = true;
+    } else if (arg === '--raw') result.embedMetadata = false;
+    else if (arg === '--extract') result.extract = true;
     else if (arg === '--force') result.force = true;
     else if (arg === '--recover-metadata') result.strictMetadata = false;
     else if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
@@ -45,7 +48,9 @@ async function main() {
     try {
       const source = resolve(file);
       if (extname(source).toLowerCase() !== '.ncm') throw new Error('Input must have a .ncm extension');
-      const result = decryptNcm(await readFile(source), { strictMetadata: options.strictMetadata });
+      const result = convertNcm(await readFile(source), {
+        strictMetadata: options.strictMetadata, embedMetadata: options.embedMetadata,
+      });
       const directory = options.output ? resolve(options.output) : dirname(source);
       const stem = basename(source, extname(source));
       await mkdir(directory, { recursive: true });

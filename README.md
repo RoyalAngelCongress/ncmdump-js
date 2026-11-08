@@ -2,17 +2,17 @@
 
 从 `NcmdumpCSharp` 项目迁移的 NCM 解密实现。**核心是原生 JavaScript ES Modules，零第三方依赖、无 Node 依赖、无需打包。** 可直接导入浏览器、Web Worker，也能由 Node 调用。
 
-已迁移：NCM 文件头解析、AES-128-ECB/PKCS#7、音频密钥盒、音频解密、MP3/FLAC 识别、元数据解析、封面提取。原 C# 的 `FixMetadata()` 使用 ATL 重写音频标签；本项目返回原始音频、元数据和封面三个独立结果，**不将标签和封面重新嵌入音频**。这不会改变解密后的音频内容。
+已迁移：NCM 文件头解析、AES-128-ECB/PKCS#7、音频密钥盒、音频解密、MP3/FLAC 识别、元数据解析、封面提取和音频标签写入。**完整转换会将已有的标题、歌手、专辑和封面嵌入音频文件，音频帧不重新编码。** 网页同时支持下载完整音频、原始音频、歌曲信息和封面。
 
 ## 快速使用
 
 在线使用：[NCM 本地解密工具](https://royalangelcongress.github.io/ncmdump-js/)。文件只在浏览器内处理，不会上传。
 
 ```js
-import { decryptNcm } from './src/index.js';
+import { convertNcm } from './src/index.js';
 
 // file 是浏览器文件选择器返回的 File。
-const result = decryptNcm(await file.arrayBuffer());
+const result = convertNcm(await file.arrayBuffer()); // 默认内嵌歌曲信息和封面
 const audioBlob = new Blob([result.audio], { type: result.mimeType });
 const url = URL.createObjectURL(audioBlob);
 // 将 url 设为下载链接 href；下载名使用 result.format ?? 'bin'。
@@ -29,7 +29,9 @@ npm run demo
 
 访问 <http://127.0.0.1:8080>。使用其他端口：`$env:PORT=8081; npm run demo`。也可以用任何静态 HTTP 服务托管 `examples/` 和 `src/`；示例需要通过 HTTP/HTTPS 打开。解密在模块 Worker 中运行，避免大文件阻塞页面；文件不会上传，下载链接在选择下一文件或离开页面时释放。
 
-示例和 `decryptNcm` 都会将完整输入、输出放在内存中，不是恒定内存的流式转换。更大的文件可使用下面的分块接口自行接入 Blob 切片、文件流或 Worker。
+网页的“下载完整音频”包含可用的歌曲信息和封面；“下载原始音频”保留解密字节，使用 `.raw.mp3/flac` 文件名。若标签格式不受支持，网页报告原因并继续提供原始音频下载。
+
+示例会同时保留完整和原始音频，占用完整输入与多个输出的内存，不是恒定内存的流式转换。更大的文件可使用下面的分块接口自行接入 Blob 切片、文件流或 Worker。
 
 ## GitHub Pages 部署
 
@@ -44,13 +46,14 @@ npm run demo
 
 ## Node CLI（独立适配层）
 
-Node 18+ 用于 CLI、开发服务和测试，浏览器核心不需要 Node。命令可以传入多个文件，默认将音频写到输入文件旁，输出文件已存在时拒绝覆盖。
+Node 18+ 用于 CLI、开发服务和测试，浏览器核心不需要 Node。命令可以传入多个文件，**默认完整转换，将歌曲信息和封面写入 MP3/FLAC 标签**，输出到输入文件旁，输出文件已存在时拒绝覆盖。使用 `--raw` 可以只解密，不写入标签。
 
 ```powershell
 node bin/ncmdump.js "D:\music\song.ncm"
 node bin/ncmdump.js "a.ncm" "b.ncm" -o "D:\output" --extract
 node bin/ncmdump.js "a.ncm" -o "D:\output" --force
 node bin/ncmdump.js "a.ncm" --recover-metadata
+node bin/ncmdump.js "a.ncm" --raw
 node bin/ncmdump.js --help
 ```
 
@@ -60,15 +63,37 @@ Node 代码调用同一核心：
 
 ```js
 import { readFile, writeFile } from 'node:fs/promises';
-import { decryptNcm } from './src/index.js';
+import { convertNcm } from './src/index.js';
 
-const result = decryptNcm(await readFile('song.ncm'));
+const result = convertNcm(await readFile('song.ncm'));
 await writeFile(`song.${result.format ?? 'bin'}`, result.audio);
 ```
 
 ## API
 
 `src/index.js` 是公开入口，同时提供 `src/index.d.ts`。输入支持 `ArrayBuffer`、`Uint8Array`、`DataView` 等 ArrayBuffer 视图，也兼容 Node 的 Buffer。视图的 `byteOffset` 和 `byteLength` 会被正确保留。核心不会修改输入。
+
+### `convertNcm(input, { strictMetadata = true, embedMetadata = true } = {})`
+
+完整转换入口，默认将已有的标题、歌手、专辑和 PNG/JPEG 封面写入音频文件，返回字段与下方 `decryptNcm` 相同，其中 `audio` 是可直接保存的完整音频。`audioLength` 仍表示 NCM 内原始音频载荷长度；完整文件大小使用 `audio.length`。
+
+MP3 支持新建 ID3v2.3 标签，以及更新已有的 ID3v2.3/v2.4 标签；保留未被替换的其他帧，替换歌曲信息和封面。FLAC 写入 Vorbis Comment 和 PICTURE，保留 STREAMINFO、音频帧、其他评论和元数据块。多位歌手在 FLAC 中分别写入 ARTIST 字段。没有新元数据或封面时保留原有内容，不会为缺失信息凭空补值。
+
+已有的 ID3v2.2、未知音频/图片格式或损坏的音频标签无法进行完整转换时，抛出 `ERR_TAGS`；CLI 显式失败，可用 `--raw` 取回原始音频。不会静默输出一个未完成标签写入的“完整文件”。
+
+只解密的兼容调用：`convertNcm(input, { embedMetadata: false })`，或者继续使用 `decryptNcm(input)`。
+
+### `createCompleteAudio(result)`
+
+将 `decryptNcm` 返回的结果补上标签，返回新的 `Uint8Array`，不会修改原音频。适合需要同时保留完整与原始下载的页面，也可在 Worker 中使用。
+
+```js
+import { decryptNcm, createCompleteAudio } from './src/index.js';
+
+const raw = decryptNcm(await file.arrayBuffer());
+const completeAudio = createCompleteAudio(raw);
+// raw.audio 为原始音频；completeAudio 包含可用的歌曲信息和封面。
+```
 
 ### `decryptNcm(input, { strictMetadata = true } = {})`
 
@@ -114,7 +139,7 @@ const blob = new Blob(chunks);
 
 - `detectAudioFormat(bytes)`：签名识别，包括 ID3、FLAC 和有效的 MPEG 音频帧头。
 - `detectImageMimeType(bytes)`：PNG/JPEG 签名识别。
-- `NcmError`：含 `code`、`message`、`offset`，偏移相对于输入 NCM 的起点。常见错误码：`ERR_INVALID_NCM`、`ERR_TRUNCATED`、`ERR_KEY`、`ERR_METADATA`、`ERR_COVER`、`ERR_EMPTY_AUDIO`。错误输入类型及非法分块偏移分别抛出 `TypeError`、`RangeError`。
+- `NcmError`：含 `code`、`message`、`offset`，解析错误的偏移相对于输入 NCM 的起点。常见错误码：`ERR_INVALID_NCM`、`ERR_TRUNCATED`、`ERR_KEY`、`ERR_METADATA`、`ERR_COVER`、`ERR_EMPTY_AUDIO`、`ERR_TAGS`。标签写入错误没有 NCM 偏移。错误输入类型及非法分块偏移分别抛出 `TypeError`、`RangeError`。
 
 ## 结构与验证
 
@@ -125,6 +150,8 @@ src/                 可复制到浏览器项目的核心和类型声明
   aes.js             AES-128-ECB 和严格 PKCS#7 去填充
   bytes.js           二进制视图、ASCII、Base64
   ncm.js             NCM 解析、密钥盒、音频解密
+  tags.js            MP3 ID3 / FLAC 评论与封面写入
+  convert.js         默认完整转换入口
   index.js           公开入口
   index.d.ts         TypeScript 类型
 bin/ncmdump.js       Node 文件读写与 CLI
@@ -134,9 +161,11 @@ test/                Node 内置测试，无测试框架依赖
 docs/migration.md    原 C# 逻辑检查及迁移说明
 ```
 
-运行 `npm test`。测试覆盖 NIST AES 标准向量、与 Node/OpenSSL 的随机密钥交叉校验、独立编码的完整 NCM 数据、Unicode 元数据、封面预留区、不规则分块、偏移边界、损坏和截断文件、CLI 与无 Node 全局对象的隔离环境。
+运行 `npm test`。53 项测试覆盖 NIST AES 标准向量、与 Node/OpenSSL 的随机密钥交叉校验、独立编码的完整 NCM 数据、Unicode 元数据、封面预留区、不规则分块、偏移边界、损坏和截断文件、MP3/FLAC 标签及封面、音频帧保留、CLI 默认完整转换和 `--raw`，以及无 Node 全局对象的隔离环境。
 
 自动测试中的完整容器使用独立编码器生成的合成夹具，音频载荷是带格式签名的测试字节。另已用 CLI 转换 14 个真实 NCM 文件，输出均经 ffprobe 识别为 MP3 并读取到时长；真实音乐文件未加入仓库。验证不覆盖所有 NCM 变体，也不对音频载荷作完整性认证。
+
+完整转换还使用真实 NCM 的 MP3、封面和可解码的 FLAC 夹具进行独立验证：ffprobe 能读到标题、歌手、专辑和内嵌封面；MP3 音频帧与封面逐字节一致，FLAC 转换前后的解码 PCM SHA-256 一致。标签实现依据 [ID3v2.3](https://id3.org/id3v2.3.0)、[ID3v2.4](https://id3.org/id3v2.4.0-structure) 和 [FLAC RFC 9639](https://www.rfc-editor.org/rfc/rfc9639.html)。
 
 AES 核心自行实现，因为标准 [Web Crypto 算法列表](https://www.w3.org/TR/webcrypto-1/#algorithm-overview) 没有 AES-ECB。实现参考 [FIPS 197](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)，测试采用 [NIST ECB 示例](https://csrc.nist.gov/csrc/media/projects/cryptographic-standards-and-guidelines/documents/examples/aes_ecb.pdf) 和 Node/OpenSSL 作为独立校验。
 

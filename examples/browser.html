@@ -13,6 +13,7 @@
     label { display: block; font-size: 14px; }
     #status { white-space: pre-wrap; overflow-wrap: anywhere; }
     #downloads a { display: inline-block; margin: 0 18px 12px 0; color: #006a69; }
+    #downloads a:first-child { font-weight: 700; }
     img { display: block; max-width: 220px; border-radius: 8px; margin-top: 12px; }
     pre { max-height: 360px; overflow: auto; padding: 16px; background: #f3f6f6; font-size: 13px; }
   </style>
@@ -28,7 +29,7 @@
     <div id="cover"></div>
     <pre id="metadata" hidden></pre>
   </main>
-  <p>音频保持解密后的原始字节，歌曲信息与封面单独下载，未重新写入音频标签。大文件仍需容纳完整输入和输出的内存。</p>
+  <p>“完整音频”会将已有的歌曲信息和封面写入音频文件，无需另外保存；音频数据不重新编码。也可单独下载原始音频、歌曲信息和封面。大文件需要容纳完整输入和输出的内存。</p>
   <script type="module" src="./browser.js"></script>
 </body>
 </html>

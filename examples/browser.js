@@ -23,7 +23,7 @@ function addDownload(blob, name, text) {
 
 function convert(buffer) {
   return new Promise((resolve, reject) => {
-    worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error.message)) : resolve(data.result);
+    worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error.message)) : resolve(data);
     worker.onerror = (event) => reject(new Error(event.message || '解密 Worker 加载失败'));
     worker.postMessage({ buffer, recoverMetadata: recoverInput.checked }, [buffer]);
   });
@@ -40,9 +40,12 @@ fileInput.addEventListener('change', async () => {
   recoverInput.disabled = true;
   status.textContent = `正在处理 ${file.name}…`;
   try {
-    const result = await convert(await file.arrayBuffer());
+    const { result, completeAudio, completeError } = await convert(await file.arrayBuffer());
     const stem = file.name.replace(/\.ncm$/i, '');
-    addDownload(new Blob([result.audio], { type: result.mimeType }), `${stem}.${result.format ?? 'bin'}`, '下载音频');
+    if (completeAudio) {
+      addDownload(new Blob([completeAudio], { type: result.mimeType }), `${stem}.${result.format ?? 'bin'}`, '下载完整音频');
+    }
+    addDownload(new Blob([result.audio], { type: result.mimeType }), `${stem}.raw.${result.format ?? 'bin'}`, '下载原始音频');
     const json = JSON.stringify({ metadata: result.metadata, rawMetadata: result.rawMetadata, warnings: result.warnings }, null, 2);
     addDownload(new Blob([json], { type: 'application/json' }), `${stem}.metadata.json`, '下载歌曲信息');
     metadata.textContent = json;
@@ -58,7 +61,9 @@ fileInput.addEventListener('change', async () => {
         cover.append(image);
       }
     }
-    status.textContent = `完成：${result.format ?? '未知格式'}，${result.audio.length.toLocaleString()} 字节。`
+    status.textContent = `完成：${result.format ?? '未知格式'}。`
+      + (completeAudio ? `完整音频 ${completeAudio.length.toLocaleString()} 字节。` : '')
+      + (completeError ? `\n完整音频生成失败：${completeError}；仍可下载原始音频。` : '')
       + (result.warnings.length ? `\n${result.warnings.join('\n')}` : '');
   } catch (error) {
     status.textContent = `解密失败：${error.message}`;

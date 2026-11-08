@@ -1,6 +1,6 @@
 {
   "name": "ncmdump-js",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Portable, dependency-free NCM decryption for browsers and JavaScript runtimes",
   "type": "module",
@@ -17,7 +17,7 @@
   },
   "bin": { "ncmdump-js": "./bin/ncmdump.js" },
   "scripts": {
-    "test": "node --test test/aes.test.js test/ncm.test.js test/cli.test.js test/portable.test.js test/server.test.js",
+    "test": "node --test test/aes.test.js test/ncm.test.js test/tags.test.js test/cli.test.js test/portable.test.js test/server.test.js",
     "demo": "node scripts/serve-demo.js"
   },
   "engines": { "node": ">=18" },

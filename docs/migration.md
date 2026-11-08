@@ -59,7 +59,7 @@ output[position] = input[position] XOR mask
 
 7. **CLI 的单独文件忽略 `-o`。** `CollectFiles()` 给位置参数文件的 `relativeToBase` 设为 null，而 `ProcessFiles()` 只在该值非 null 时赋 `targetOutputDir`。新 CLI 直接对每个文件应用输出目录；也拒绝默认覆盖，失败时设置非零退出码。原 CLI 对处理错误通常仍返回 0。
 
-8. **与解密分离的标签步骤。** `FixMetadata()` 依赖 ATL，并且元数据为 null 时连单独存在的封面也不会写入。JS 保留音频原始字节，单独返回规范化元数据、完整 JSON 和图片。标签嵌入需要额外的 ID3/FLAC 标签写入层，当前没有实现。
+8. **与解密分离的标签步骤。** `FixMetadata()` 依赖 ATL，并且元数据为 null 时连单独存在的封面也不会写入。JS 的 `decryptNcm` 保留原始音频与独立元数据；新增的 `createCompleteAudio` 用原生 JS 写入 MP3 ID3v2.3/v2.4、FLAC Vorbis Comment/PICTURE。`convertNcm` 和 CLI 默认完整转换；只有封面、没有歌曲信息时也可嵌入封面。音频帧不重新编码。
 
 9. **运行目标说明不一致。** 原 README 写 .NET 8+，实际项目目标是 `net10.0`。本机可用 SDK 为 7.0.400，因此本次没有直接编译运行原 C# 项目，也没有安装或修改 .NET 环境。
 
@@ -68,7 +68,8 @@ output[position] = input[position] XOR mask
 - 原 C# 的 `FromJson()` 会吞掉 JSON 或字段类型错误并返回 null；JS 默认严格报告元数据错误，可显式选择 `strictMetadata: false` 恢复音频。可选字段类型不符时使用默认值，保留原始 JSON。
 - 图片类型根据 PNG/JPEG 魔数识别，未知类型返回 null，不再将所有非 PNG 图片都视为 JPEG。
 - 和原实现一样，不校验保存的 CRC 字段，也不验证解密后音频的完整编解码结构。合法头部不代表音频未损坏。
-- `decryptNcm` 是整文件内存 API。分块算法已经提供，但没有实现自动解析异步输入流、磁盘目录递归或音频标签写入。
+- `decryptNcm`、`convertNcm` 是整文件内存 API。分块解密算法已经提供，但没有实现自动解析异步输入流或磁盘目录递归。标签写入同样在内存中完成；网页同时保留完整与原始音频下载。
+- 标签错误会明确报告 `ERR_TAGS`。支持新建 ID3v2.3、更新已有 ID3v2.3/v2.4，以及原生 FLAC；旧 ID3v2.2、未知封面类型与损坏标签可选择 `--raw` 或 `embedMetadata: false` 输出原始音频。完整转换不会静默忽略标签错误。
 - 原 C# 工程未改动。原许可证已复制到新项目。
 
 ## 验证方法
@@ -76,9 +77,10 @@ output[position] = input[position] XOR mask
 - AES 使用 FIPS 197 单块向量、NIST SP 800-38A 多块向量，以及不同长度的随机明文与 Node/OpenSSL 加密结果交叉验证。
 - 完整 NCM 夹具由测试中的独立编码器构造，AES 来自 Node/OpenSSL，密钥盒/XOR 使用原 C# 算法的直接转写。预期音频是在编码前独立保存的明文，不由被测解密器产生。
 - 覆盖 Unicode JSON、缺失元数据、PNG 封面及预留区、MP3/FLAC、格式冲突、Buffer/DataView 偏移、不规则分块、超过 32 位的偏移、每一个头部截断位置、异常长度、PKCS#7 与损坏元数据恢复。
-- 将真实 `src/` 模块图加载到隔离 JS 上下文，只注入标准 `TextDecoder`；上下文中没有 `process`、`Buffer`、`require`、`crypto`、`atob`，并验证完整转换结果。
+- 将真实 `src/` 模块图加载到隔离 JS 上下文，只注入标准 `TextDecoder` 和 `TextEncoder`；上下文中没有 `process`、`Buffer`、`require`、`crypto`、`atob`，并验证完整转换结果。
 - CLI 验证输出目录、侧文件提取、含点文件名、覆盖保护、失败退出码和多文件失败后继续处理。
-- 最终 38 项自动测试通过。浏览器实测通过模块 Worker 解密合成 NCM，显示 70,007 字节音频、中文歌曲信息和封面下载链接；同时验证了损坏元数据的默认报错和显式恢复。示例服务器验证了入口重定向与模块路径，浏览器还验证了同一文件重新选择的流程。
+- 新增标签功能后共 53 项自动测试通过，覆盖 Unicode 文本、封面原字节、已有标签保留、ID3 unsynchronisation/扩展头/footer、FLAC 评论和图片块、CLI 默认完整与 raw 转换。浏览器使用模块 Worker，同时提供完整、原始两种音频和独立歌曲信息、封面下载。
+- 独立验证真实 MP3 完整转换后，ffprobe 能读到中文标题、歌手、专辑和 640×640 PNG 内嵌封面，音频帧与封面逐字节一致；另验证了 ID3v2.4 输出与可解码的 FLAC 夹具，FLAC 转换前后解码 PCM 的 SHA-256 一致。
 - 后续已用 CLI 转换 14 个真实 NCM 文件，输出均经 ffprobe 识别为 MP3 并读取到时长。真实音乐文件未加入仓库；自动测试继续使用合成夹具，兼容性结论不覆盖所有 NCM 变体。
 
 标准资料：[NIST FIPS 197](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)、[NIST ECB 示例](https://csrc.nist.gov/csrc/media/projects/cryptographic-standards-and-guidelines/documents/examples/aes_ecb.pdf)、[Web Crypto 算法列表](https://www.w3.org/TR/webcrypto-1/#algorithm-overview)。

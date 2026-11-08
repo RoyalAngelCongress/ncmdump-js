@@ -23,6 +23,13 @@ export function pattern(length) {
   return Buffer.from(Array.from({ length }, (_, i) => (i * 73 + (i >>> 3) * 19 + 41) & 255));
 }
 
+export function flacAudio(payload = pattern(70003)) {
+  const streaminfo = Buffer.alloc(34);
+  streaminfo.writeUInt16BE(4096, 0);
+  streaminfo.writeUInt16BE(4096, 2);
+  return Buffer.concat([Buffer.from('fLaC'), Buffer.from([0x80, 0, 0, 34]), streaminfo, payload]);
+}
+
 export function referenceCrypt(data, key) {
   const box = Array.from({ length: 256 }, (_, i) => i);
   let lastByte = 0;
@@ -49,7 +56,7 @@ function uint32(value) {
 
 export function makeFixture(options = {}) {
   const key = options.key ?? pattern(144);
-  const audio = options.audio ?? Buffer.concat([Buffer.from('fLaC'), pattern(70003)]);
+  const audio = options.audio ?? flacAudio();
   const metadata = options.metadata === undefined ? defaultMetadata : options.metadata;
   const cover = options.cover ?? png;
   const padding = options.coverPadding ?? Buffer.from([0xee, 0x00, 0x81, 0xff, 0x25]);
